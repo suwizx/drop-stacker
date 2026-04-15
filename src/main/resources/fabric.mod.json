@@ -3,13 +3,14 @@
 	"id": "drop-stacker",
 	"version": "${version}",
 	"name": "Drop Stacker",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "Automatically merges dropped item entities on the ground into stacked entities, reducing item lag on servers and singleplayer worlds.",
 	"authors": [
-		"Me!"
+		"suwizx"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://github.com/suwizx/drop-stacker",
+		"sources": "https://github.com/suwizx/drop-stacker",
+		"issues": "https://github.com/suwizx/drop-stacker/issues"
 	},
 	"license": "MIT",
 	"icon": "assets/drop-stacker/icon.png",
