@@ -52,11 +52,11 @@ object DropStackerConfig {
     }
 
     private data class DropStackerConfigData(
-        val maxStackSize: Int?,
-        val scanRadiusX: Double?,
-        val scanRadiusY: Double?,
-        val scanRadiusZ: Double?,
-        val scanInterval: Int?,
-        val showDespawnTimer: Boolean?
+        var maxStackSize: Int?,
+        var scanRadiusX: Double?,
+        var scanRadiusY: Double?,
+        var scanRadiusZ: Double?,
+        var scanInterval: Int?,
+        var showDespawnTimer: Boolean?
     )
 }

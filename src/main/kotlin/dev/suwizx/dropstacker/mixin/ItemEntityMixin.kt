@@ -73,11 +73,17 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
 
     @Inject(method = ["isMergable"], at = [At("HEAD")], cancellable = true)
     private fun onCanMerge(callback: CallbackInfoReturnable<Boolean>) {
-        // Only block merging when at max stack size.
-        // Do NOT force true — let vanilla run its own checks (e.g. INFINITE_PICKUP_DELAY)
-        // so items that should never merge (e.g. from /give) are still protected.
-        if (this.getItem().count >= DropStackerConfig.maxStackSize) {
-            callback.setReturnValue(false)
+        val stack = this.getItem()
+        val count = stack.count
+        val configMax = DropStackerConfig.maxStackSize
+        when {
+            // At or above our configured limit — block merging entirely
+            count >= configMax -> callback.setReturnValue(false)
+            // Above vanilla's per-item limit (usually 64) but below ours — force allow
+            // so vanilla's own "count < maxStackSize" check doesn't cap us at 64.
+            // INFINITE_PICKUP_DELAY items never reach here (count is always < 64 when spawned).
+            count >= stack.maxStackSize -> callback.setReturnValue(true)
+            // Below vanilla limit — let vanilla run so INFINITE_PICKUP_DELAY is still respected
         }
     }
 
