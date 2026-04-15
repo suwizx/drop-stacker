@@ -2,7 +2,6 @@ package dev.suwizx.dropstacker.mixin
 
 import dev.suwizx.dropstacker.accessor.ItemEntityAccessor
 import dev.suwizx.dropstacker.config.DropStackerConfig
-import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.item.ItemEntity
 import net.minecraft.world.item.ItemStack
 import net.minecraft.network.chat.Component
@@ -37,9 +36,15 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
     private fun onTick(ci: CallbackInfo) {
         val entity = this as ItemEntity
         val stack = entity.item
-        if (!entity.level().isClientSide
-            && entity.isAlive
-            && stack.count < DropStackerConfig.maxStackSize
+
+        if (entity.level().isClientSide || !entity.isAlive) return
+
+        // Refresh the label once per second so the despawn countdown ticks down smoothly
+        if (DropStackerConfig.showDespawnTimer && entity.age % 20 == 0) {
+            updateStackLabel(stack.count)
+        }
+
+        if (stack.count < DropStackerConfig.maxStackSize
             && isMergable()
             && entity.age % DropStackerConfig.scanInterval == 0
         ) {
@@ -62,6 +67,7 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
             }
         }
     }
+
 
     @Inject(method = ["isMergable"], at = [At("HEAD")], cancellable = true)
     private fun onCanMerge(callback: CallbackInfoReturnable<Boolean>) {
@@ -108,18 +114,34 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
         return this.compareTo(other) < 0
     }
 
-    private fun updateStackLabel(count : Int){
-        val entity = this as Entity
-        if(count <= 0){
-            entity.customName =null ;
+    private fun updateStackLabel(count: Int) {
+        val entity = this as ItemEntity
+        if (count <= 0) {
+            entity.customName = null
             entity.isCustomNameVisible = false
             return
         }
 
-        val color = if (count > 64) "§e" else "§f"
+        val countColor = if (count > 64) "§e" else "§f"
+        val text = StringBuilder("$countColor×$count")
 
-        entity.customName = Component.literal("$color×$count")
+        if (DropStackerConfig.showDespawnTimer) {
+            val remainingTicks = DESPAWN_TICKS - entity.age
+            if (remainingTicks > 0) {
+                val totalSeconds = remainingTicks / 20
+                val minutes = totalSeconds / 60
+                val seconds = totalSeconds % 60
+                val timerColor = if (remainingTicks < 600) "§c" else "§7"
+                text.append(" $timerColor${minutes}:${seconds.toString().padStart(2, '0')}")
+            }
+        }
+
+        entity.customName = Component.literal(text.toString())
         entity.isCustomNameVisible = true
+    }
+
+    companion object {
+        private const val DESPAWN_TICKS = 6000
     }
 
 

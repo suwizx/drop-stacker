@@ -10,6 +10,7 @@ object DropStackerConfig {
     var scanRadiusY: Double = 2.0
     var scanRadiusZ: Double = 5.0
     var scanInterval: Int = 5
+    var showDespawnTimer: Boolean = true
 
     private val configFile: File = FabricLoader.getInstance().configDir.resolve("drop-stacker.json").toFile()
     private val gson = GsonBuilder().setPrettyPrinting().create()
@@ -30,6 +31,7 @@ object DropStackerConfig {
             scanRadiusY = data.scanRadiusY
             scanRadiusZ = data.scanRadiusZ
             scanInterval = data.scanInterval
+            showDespawnTimer = data.showDespawnTimer
         } catch (e: Exception) {
             println("[DropStacker] Failed to load config, using defaults.")
             e.printStackTrace()
@@ -39,7 +41,7 @@ object DropStackerConfig {
     fun save() {
         try {
             val data = DropStackerConfigData(
-                maxStackSize, scanRadiusX, scanRadiusY, scanRadiusZ, scanInterval
+                maxStackSize, scanRadiusX, scanRadiusY, scanRadiusZ, scanInterval, showDespawnTimer
             )
             configFile.writeText(gson.toJson(data))
         } catch (e: Exception) {
@@ -52,6 +54,7 @@ object DropStackerConfig {
         val scanRadiusX: Double,
         val scanRadiusY: Double,
         val scanRadiusZ: Double,
-        val scanInterval: Int
+        val scanInterval: Int,
+        val showDespawnTimer: Boolean
     )
 }
