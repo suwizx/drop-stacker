@@ -26,12 +26,14 @@ object DropStackerConfig {
             val data = gson.fromJson(reader, DropStackerConfigData::class.java)
             reader.close()
 
-            maxStackSize = data.maxStackSize
-            scanRadiusX = data.scanRadiusX
-            scanRadiusY = data.scanRadiusY
-            scanRadiusZ = data.scanRadiusZ
-            scanInterval = data.scanInterval
-            showDespawnTimer = data.showDespawnTimer
+            maxStackSize = data.maxStackSize ?: 1000
+            scanRadiusX = data.scanRadiusX ?: 5.0
+            scanRadiusY = data.scanRadiusY ?: 2.0
+            scanRadiusZ = data.scanRadiusZ ?: 5.0
+            scanInterval = data.scanInterval ?: 5
+            showDespawnTimer = data.showDespawnTimer ?: true
+            // Re-save so any new fields missing from an old config file get written
+            save()
         } catch (e: Exception) {
             println("[DropStacker] Failed to load config, using defaults.")
             e.printStackTrace()
@@ -50,11 +52,11 @@ object DropStackerConfig {
     }
 
     private data class DropStackerConfigData(
-        val maxStackSize: Int,
-        val scanRadiusX: Double,
-        val scanRadiusY: Double,
-        val scanRadiusZ: Double,
-        val scanInterval: Int,
-        val showDespawnTimer: Boolean
+        val maxStackSize: Int?,
+        val scanRadiusX: Double?,
+        val scanRadiusY: Double?,
+        val scanRadiusZ: Double?,
+        val scanInterval: Int?,
+        val showDespawnTimer: Boolean?
     )
 }

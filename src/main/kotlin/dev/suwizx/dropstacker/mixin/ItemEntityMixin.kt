@@ -124,8 +124,13 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
             return
         }
 
-        val countColor = if (count > 64) "§e" else "§f"
-        val text = StringBuilder("$countColor×$count")
+        // Count color: red for huge stacks, yellow for large, green for small
+        val countColor = when {
+            count > 500 -> "§c"
+            count > 64  -> "§e"
+            else        -> "§a"
+        }
+        val text = StringBuilder("§6[§r$countColor×$count")
 
         if (DropStackerConfig.showDespawnTimer) {
             val remainingTicks = DESPAWN_TICKS - entity.age
@@ -133,10 +138,17 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
                 val totalSeconds = remainingTicks / 20
                 val minutes = totalSeconds / 60
                 val seconds = totalSeconds % 60
-                val timerColor = if (remainingTicks < 600) "§c" else "§7"
-                text.append(" $timerColor${minutes}:${seconds.toString().padStart(2, '0')}")
+                // Timer color: green plenty of time, yellow getting close, red urgent
+                val timerColor = when {
+                    remainingTicks < 600  -> "§c"
+                    remainingTicks < 2400 -> "§e"
+                    else                  -> "§a"
+                }
+                text.append(" §b| §r$timerColor${minutes}:${seconds.toString().padStart(2, '0')}")
             }
         }
+
+        text.append("§6]")
 
         entity.customName = Component.literal(text.toString())
         entity.isCustomNameVisible = true
