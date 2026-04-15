@@ -12,6 +12,8 @@ import org.spongepowered.asm.mixin.injection.Inject
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable
 
+private const val DESPAWN_TICKS = 6000
+
 @Mixin(ItemEntity::class)
 abstract class ItemEntityMixin : ItemEntityAccessor {
     @Shadow
@@ -139,10 +141,5 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
         entity.customName = Component.literal(text.toString())
         entity.isCustomNameVisible = true
     }
-
-    companion object {
-        private const val DESPAWN_TICKS = 6000
-    }
-
 
 }
