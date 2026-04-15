@@ -4,11 +4,18 @@ A Fabric mod for Minecraft that automatically stacks dropped item entities on th
 
 ## Features
 
-- Nearby dropped items of the same type automatically merge together
-- Configurable max stack size (default: 1000)
-- Configurable scan radius and scan interval
-- Stack count label displayed above items — yellow for stacks over 64, white for 64 or below
-- Server-side logic only, no client-side desync
+- Dropped items of the same type and NBT automatically merge within a configurable radius
+- Stacks beyond vanilla's 64-item limit — up to your configured `maxStackSize`
+- Colorful stack count label displayed above items:
+  - 🟢 Green — 64 or below
+  - 🟡 Yellow — 65 to 500
+  - 🔴 Red — above 500
+- Optional despawn countdown timer on the label:
+  - 🟢 Green — plenty of time remaining
+  - 🟡 Yellow — under 2 minutes
+  - 🔴 Red — under 30 seconds
+- Server-side merge logic only, no client-side desync
+- New config fields are added automatically on server restart — no manual editing needed
 
 ## Requirements
 
@@ -20,7 +27,7 @@ A Fabric mod for Minecraft that automatically stacks dropped item entities on th
 
 ## Configuration
 
-After the first launch, a config file is created at `.minecraft/config/drop-stacker.json`:
+Config file is created automatically at `.minecraft/config/drop-stacker.json` on first launch:
 
 ```json
 {
@@ -28,17 +35,19 @@ After the first launch, a config file is created at `.minecraft/config/drop-stac
   "scanRadiusX": 5.0,
   "scanRadiusY": 2.0,
   "scanRadiusZ": 5.0,
-  "scanInterval": 5
+  "scanInterval": 5,
+  "showDespawnTimer": true
 }
 ```
 
 | Field | Description | Default |
 |---|---|---|
-| `maxStackSize` | Maximum items per stacked entity | 1000 |
-| `scanRadiusX` | Scan radius on X axis (blocks) | 5.0 |
-| `scanRadiusY` | Scan radius on Y axis (blocks) | 2.0 |
-| `scanRadiusZ` | Scan radius on Z axis (blocks) | 5.0 |
-| `scanInterval` | Ticks between each scan | 5 |
+| `maxStackSize` | Maximum items per stacked entity | `1000` |
+| `scanRadiusX` | Scan radius on X axis (blocks) | `5.0` |
+| `scanRadiusY` | Scan radius on Y axis (blocks) | `2.0` |
+| `scanRadiusZ` | Scan radius on Z axis (blocks) | `5.0` |
+| `scanInterval` | Ticks between each scan | `5` |
+| `showDespawnTimer` | Show despawn countdown on the label | `true` |
 
 ## Building
 
