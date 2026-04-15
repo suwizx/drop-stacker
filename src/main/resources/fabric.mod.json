@@ -1,0 +1,51 @@
+{
+	"schemaVersion": 1,
+	"id": "drop-stacker",
+	"version": "${version}",
+	"name": "Drop Stacker",
+	"description": "This is an example description! Tell everyone what your mod is about!",
+	"authors": [
+		"Me!"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/drop-stacker/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			{
+				"value": "dev.suwizx.dropstacker.DropStacker",
+				"adapter": "kotlin"
+			}
+		],
+		"client": [
+			{
+				"value": "dev.suwizx.dropstacker.client.DropStackerClient",
+				"adapter": "kotlin"
+			}
+		],
+		"fabric-datagen": [
+			{
+				"value": "dev.suwizx.dropstacker.client.DropStackerDataGenerator",
+				"adapter": "kotlin"
+			}
+		]
+	},
+	"mixins": [
+		"drop-stacker.mixins.json",
+		{
+			"config": "drop-stacker.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.1",
+		"minecraft": "~26.1.2",
+		"java": ">=25",
+		"fabric-api": "*",
+		"fabric-language-kotlin": "*"
+	}
+}

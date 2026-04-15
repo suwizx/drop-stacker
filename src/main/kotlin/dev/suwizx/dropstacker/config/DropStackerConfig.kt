@@ -1,0 +1,57 @@
+package dev.suwizx.dropstacker.config
+
+import com.google.gson.GsonBuilder
+import net.fabricmc.loader.api.FabricLoader
+import java.io.File
+
+object DropStackerConfig {
+    var maxStackSize: Int = 1000
+    var scanRadiusX: Double = 5.0
+    var scanRadiusY: Double = 2.0
+    var scanRadiusZ: Double = 5.0
+    var scanInterval: Int = 5
+
+    private val configFile: File = FabricLoader.getInstance().configDir.resolve("drop-stacker.json").toFile()
+    private val gson = GsonBuilder().setPrettyPrinting().create()
+
+    fun load() {
+        if (!configFile.exists()) {
+            save()
+            return
+        }
+
+        try {
+            val reader = configFile.reader()
+            val data = gson.fromJson(reader, DropStackerConfigData::class.java)
+            reader.close()
+
+            maxStackSize = data.maxStackSize
+            scanRadiusX = data.scanRadiusX
+            scanRadiusY = data.scanRadiusY
+            scanRadiusZ = data.scanRadiusZ
+            scanInterval = data.scanInterval
+        } catch (e: Exception) {
+            println("[DropStacker] Failed to load config, using defaults.")
+            e.printStackTrace()
+        }
+    }
+
+    fun save() {
+        try {
+            val data = DropStackerConfigData(
+                maxStackSize, scanRadiusX, scanRadiusY, scanRadiusZ, scanInterval
+            )
+            configFile.writeText(gson.toJson(data))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private data class DropStackerConfigData(
+        val maxStackSize: Int,
+        val scanRadiusX: Double,
+        val scanRadiusY: Double,
+        val scanRadiusZ: Double,
+        val scanInterval: Int
+    )
+}
