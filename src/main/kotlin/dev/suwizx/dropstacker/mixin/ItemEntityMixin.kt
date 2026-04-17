@@ -12,8 +12,6 @@ import org.spongepowered.asm.mixin.injection.Inject
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable
 
-private const val DESPAWN_TICKS = 6000
-
 @Mixin(ItemEntity::class)
 abstract class ItemEntityMixin : ItemEntityAccessor {
     @Shadow
@@ -25,9 +23,19 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
     @Shadow
     protected abstract fun isMergable(): Boolean
 
+    @Shadow
+    private var pickupDelay = 0
+
+    @Shadow
+    private var age = 0
+
     override fun invokeUpdateStackLabel(count: Int) {
         this.updateStackLabel(count)
     }
+
+    override fun invokeGetAge(): Int = this.age
+
+    override fun invokeGetPickupDelay(): Int = this.pickupDelay
 
     @Inject(method = ["setItem"], at = [At("TAIL")])
     private fun onSetItem(stack: ItemStack, ci: CallbackInfo) {
@@ -36,19 +44,29 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
 
     @Inject(method = ["tick"], at = [At("HEAD")])
     private fun onTick(ci: CallbackInfo) {
-        val entity = this as ItemEntity
+        val entity = this as Any as ItemEntity
         val stack = entity.item
 
         if (entity.level().isClientSide || !entity.isAlive) return
 
-        // Refresh the label once per second so the despawn countdown ticks down smoothly
-        if (DropStackerConfig.showDespawnTimer && entity.age % 20 == 0) {
-            updateStackLabel(stack.count)
+        // Smart Throttling: Refresh the label based on urgency to save bandwidth
+        if (DropStackerConfig.showDespawnTimer) {
+            val interval = when {
+                this.age <= -32768    -> 600 // Infinite: update every 30s just in case
+                DropStackerConfig.despawnTicks - this.age < 600  -> 20  // Urgent (<30s): every second
+                DropStackerConfig.despawnTicks - this.age < 2400 -> 60  // Warning (<2m): every 3 seconds
+                else                  -> 100 // Healthy (>2m): every 5 seconds
+            }
+
+            // Stagger updates using entity ID to prevent network spikes. Using tickCount ensures constant progress.
+            if ((entity.tickCount + entity.id) % interval == 0) {
+                updateStackLabel(stack.count)
+            }
         }
 
         if (stack.count < DropStackerConfig.maxStackSize
             && isMergable()
-            && entity.age % DropStackerConfig.scanInterval == 0
+            && entity.tickCount % DropStackerConfig.scanInterval == 0
         ) {
             val targetEntity = entity.level().getEntitiesOfClass(
                 ItemEntity::class.java,
@@ -60,7 +78,7 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
             ) {
                 it != entity
                 && it.isAlive
-                && (it as ItemEntityMixin).isMergable()
+                && (it as Any as ItemEntityMixin).isMergable()
                 && ItemStack.isSameItemSameComponents(stack, it.item)
             }.firstOrNull()
 
@@ -73,29 +91,38 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
 
     @Inject(method = ["isMergable"], at = [At("HEAD")], cancellable = true)
     private fun onCanMerge(callback: CallbackInfoReturnable<Boolean>) {
+        val entity = this as Any as ItemEntity
+        // Bug fix: large stacks must still respect pickup delay and life state
+        if (!entity.isAlive || this.pickupDelay > 0) {
+            callback.setReturnValue(false)
+            return
+        }
+
         val stack = this.getItem()
         val count = stack.count
         val configMax = DropStackerConfig.maxStackSize
+
+        // Blacklist check
+        val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item).toString()
+        if (DropStackerConfig.blacklist.contains(itemId)) {
+            callback.setReturnValue(false)
+            return
+        }
+
         when {
-            // At or above our configured limit — block merging entirely
             count >= configMax -> callback.setReturnValue(false)
-            // Above vanilla's per-item limit (usually 64) but below ours — force allow
-            // so vanilla's own "count < maxStackSize" check doesn't cap us at 64.
-            // INFINITE_PICKUP_DELAY items never reach here (count is always < 64 when spawned).
             count >= stack.maxStackSize -> callback.setReturnValue(true)
-            // Below vanilla limit — let vanilla run so INFINITE_PICKUP_DELAY is still respected
         }
     }
 
     @Inject(method = ["tryToMerge"], at = [At("HEAD")], cancellable = true)
     private fun onTryMerge(other: ItemEntity, ci: CallbackInfo) {
+        val entity = this as Any as ItemEntity
         val thisStack = this.getItem()
         val otherStack = other.item
         val maxStackSize = DropStackerConfig.maxStackSize
 
         if (ItemStack.isSameItemSameComponents(thisStack, otherStack)) {
-            // Cancel vanilla for all same-type merges — we own this path entirely.
-            // Must cancel before the early return so vanilla can never bypass maxStackSize.
             ci.cancel()
 
             if (thisStack.count >= maxStackSize) return
@@ -106,6 +133,12 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
             if (transferAmount > 0) {
                 thisStack.count += transferAmount
                 otherStack.count -= transferAmount
+
+                // Vanilla Parity: Preserve the 'best' state
+                // Keep the item that has more time left (smaller age)
+                this.age = minOf(this.age, (other as ItemEntityAccessor).invokeGetAge())
+                // Keep the longest pickup delay to prevent exploitation
+                this.pickupDelay = maxOf(this.pickupDelay, (other as ItemEntityAccessor).invokeGetPickupDelay())
 
                 updateStackLabel(thisStack.count)
 
@@ -123,40 +156,51 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
     }
 
     private fun updateStackLabel(count: Int) {
-        val entity = this as ItemEntity
-        if (count <= 0) {
+        val entity = this as Any as ItemEntity
+        
+        // Handle single item visibility and empty stacks
+        if (count <= 0 || (count == 1 && DropStackerConfig.hideSingleItemLabel)) {
             entity.customName = null
             entity.isCustomNameVisible = false
             return
         }
 
-        // Count color: red for huge stacks, yellow for large, green for small
+        // Count color: configurable thresholds
         val countColor = when {
-            count > 500 -> "§c"
-            count > 64  -> "§e"
-            else        -> "§a"
+            count >= DropStackerConfig.countHighThreshold -> net.minecraft.ChatFormatting.RED
+            count >= DropStackerConfig.countLowThreshold  -> net.minecraft.ChatFormatting.YELLOW
+            else                                          -> net.minecraft.ChatFormatting.GREEN
         }
-        val text = StringBuilder("§6[§r$countColor×$count")
+
+        val text = Component.empty()
+            .append(Component.literal("[").withStyle(net.minecraft.ChatFormatting.GOLD))
+            .append(Component.literal("×$count").withStyle(countColor))
 
         if (DropStackerConfig.showDespawnTimer) {
-            val remainingTicks = DESPAWN_TICKS - entity.age
-            if (remainingTicks > 0) {
-                val totalSeconds = remainingTicks / 20
-                val minutes = totalSeconds / 60
-                val seconds = totalSeconds % 60
-                // Timer color: green plenty of time, yellow getting close, red urgent
-                val timerColor = when {
-                    remainingTicks < 600  -> "§c"
-                    remainingTicks < 2400 -> "§e"
-                    else                  -> "§a"
+            if (this.age <= -32768) {
+                text.append(Component.literal(" | ").withStyle(net.minecraft.ChatFormatting.AQUA))
+                text.append(Component.literal("∞").withStyle(net.minecraft.ChatFormatting.GREEN))
+            } else {
+                val remainingTicks = DropStackerConfig.despawnTicks - this.age
+                if (remainingTicks > 0) {
+                    val totalSeconds = remainingTicks / 20
+                    val minutes = totalSeconds / 60
+                    val seconds = totalSeconds % 60
+                    // Timer color: green plenty of time, yellow getting close, red urgent
+                    val timerColor = when {
+                        remainingTicks < 600  -> net.minecraft.ChatFormatting.RED
+                        remainingTicks < 2400 -> net.minecraft.ChatFormatting.YELLOW
+                        else                  -> net.minecraft.ChatFormatting.GREEN
+                    }
+                    text.append(Component.literal(" | ").withStyle(net.minecraft.ChatFormatting.AQUA))
+                    text.append(Component.literal("${minutes}:${seconds.toString().padStart(2, '0')}").withStyle(timerColor))
                 }
-                text.append(" §b| §r$timerColor${minutes}:${seconds.toString().padStart(2, '0')}")
             }
         }
 
-        text.append("§6]")
+        text.append(Component.literal("]").withStyle(net.minecraft.ChatFormatting.GOLD))
 
-        entity.customName = Component.literal(text.toString())
+        entity.customName = text
         entity.isCustomNameVisible = true
     }
 
