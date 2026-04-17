@@ -4,18 +4,14 @@ A Fabric mod for Minecraft that automatically stacks dropped item entities on th
 
 ## Features
 
-- Dropped items of the same type and NBT automatically merge within a configurable radius
-- Stacks beyond vanilla's 64-item limit — up to your configured `maxStackSize`
-- Colorful stack count label displayed above items:
-  - 🟢 Green — 64 or below
-  - 🟡 Yellow — 65 to 500
-  - 🔴 Red — above 500
-- Optional despawn countdown timer on the label:
-  - 🟢 Green — plenty of time remaining
-  - 🟡 Yellow — under 2 minutes
-  - 🔴 Red — under 30 seconds
-- Server-side merge logic only, no client-side desync
-- New config fields are added automatically on server restart — no manual editing needed
+- **Smart Stacking:** Dropped items of the same type and NBT automatically merge within a configurable radius.
+- **Limitless Piles:** Stacks beyond vanilla's 64-item limit — up to your configured `maxStackSize`.
+- **Visual Feedback:** Colorful stack count label displayed above items (configurable thresholds).
+- **Despawn Timer:** Optional countdown on the label with urgency-based color coding (supports infinite items with `∞`).
+- **Performance Optimized:** Smart throttling reduces network bandwidth by updating labels less frequently for "healthy" items and staggering updates across ticks.
+- **Vanilla Parity:** Merging preserves the "best" state (minimum age and maximum pickup delay) to prevent despawn bugs or pickup exploits.
+- **Item Blacklist:** Choose specific items that should never be stacked.
+- **Server-Side Only:** All logic is handled on the server to prevent client-side desync.
 
 ## Requirements
 
@@ -27,7 +23,7 @@ A Fabric mod for Minecraft that automatically stacks dropped item entities on th
 
 ## Configuration
 
-Config file is created automatically at `.minecraft/config/drop-stacker.json` on first launch:
+The config file is created automatically at `.minecraft/config/drop-stacker.json`. Fields update automatically on restart if you upgrade the mod.
 
 ```json
 {
@@ -36,18 +32,26 @@ Config file is created automatically at `.minecraft/config/drop-stacker.json` on
   "scanRadiusY": 2.0,
   "scanRadiusZ": 5.0,
   "scanInterval": 5,
-  "showDespawnTimer": true
+  "showDespawnTimer": true,
+  "countLowThreshold": 64,
+  "countHighThreshold": 500,
+  "hideSingleItemLabel": false,
+  "blacklist": [],
+  "despawnTicks": 6000
 }
 ```
 
 | Field | Description | Default |
 |---|---|---|
 | `maxStackSize` | Maximum items per stacked entity | `1000` |
-| `scanRadiusX` | Scan radius on X axis (blocks) | `5.0` |
-| `scanRadiusY` | Scan radius on Y axis (blocks) | `2.0` |
-| `scanRadiusZ` | Scan radius on Z axis (blocks) | `5.0` |
-| `scanInterval` | Ticks between each scan | `5` |
+| `scanRadiusX/Y/Z` | Scan radius on each axis (blocks) | `5.0 / 2.0 / 5.0` |
+| `scanInterval` | Ticks between each merge scan | `5` |
 | `showDespawnTimer` | Show despawn countdown on the label | `true` |
+| `countLowThreshold` | Count at which the label turns Yellow | `64` |
+| `countHighThreshold` | Count at which the label turns Red | `500` |
+| `hideSingleItemLabel`| Hide the label if the stack only has 1 item | `false` |
+| `blacklist` | List of item IDs to ignore (e.g. `["minecraft:diamond"]`) | `[]` |
+| `despawnTicks` | World despawn rate (matches timer to server settings) | `6000` |
 
 ## Building
 
