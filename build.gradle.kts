@@ -25,9 +25,6 @@ loom {
 			sourceSet(sourceSets.main.get())
 			sourceSet(sourceSets.getByName("client"))
 		}
-		mixin {
-			defaultRefmapName = "drop-stacker.refmap.json"
-		}
 	}
 }
 
