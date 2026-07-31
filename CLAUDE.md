@@ -25,24 +25,34 @@ The output JAR is in `build/libs/`.
 
 ## Architecture
 
-This is a Fabric mod for Minecraft 26.1.2 written in Kotlin that automatically stacks dropped item entities on the ground.
+This is a Fabric mod for Minecraft 26.2 written in Kotlin that automatically stacks dropped item entities on the ground.
 
-**Core flow:** `ItemEntityMixin` hooks into `ItemEntity` tick logic to periodically scan nearby entities (every `scanInterval` ticks), find items of the same type and NBT components, and merge them up to `maxStackSize`. Merging is server-side only to prevent desync.
+**Core flow:** merging is *push*-based. `ServerLevelMixin` hooks `ServerLevel.addFreshEntity` so a new drop is absorbed into a nearby pile in the tick it spawns. `ItemEntityMixin` also runs a periodic scan as a safety net (for items that moved, or loaded from disk), with an adaptive backoff that slows idle piles down to `maxScanInterval`. All merging is server-side; a vanilla client needs no mod.
 
 **Key files:**
-- `ItemEntityMixin.kt` — all core stacking logic via Mixin injections and redirects
-- `ItemEntityAccessor.kt` — Mixin `@Accessor` interface to expose `updateStackLabel` to the mixin
-- `DropStackerConfig.kt` — GSON-backed config loaded from `.minecraft/config/drop-stacker.json`
-- `DropStacker.kt` — mod entrypoint, loads config on init
+- `stack/StackEngine.kt` — all merge logic; the only place that scans for neighbours
+- `stack/StackLabel.kt` — builds the `[×count | m:ss]` name tag, plus the `labelKey` change-detection scalar
+- `mixin/ItemEntityMixin.kt` — tick scan, label refresh, and the `isMergable`/`tryToMerge`/`mergeWithNeighbours` overrides
+- `mixin/ServerLevelMixin.kt` — instant merge-on-spawn
+- `accessor/ItemEntityAccessor.kt` — plain Kotlin interface (not `@Accessor`) mixed into `ItemEntity`, exposing private `age`/`pickupDelay` and the mod's per-entity state
+- `config/DropStackerConfig.kt` — GSON-backed config, with migration from the 1.0.x `scanRadiusX/Y/Z` keys
+- `config/ItemRules.kt` — resolves blacklist/whitelist/overrides from strings to `Item` refs and `TagKey`s once, so the scan predicate allocates nothing
+- `command/DropStackerCommand.kt` — `/dropstacker`
+- `DropStacker.kt` — entrypoint; loads config, registers the command, invalidates `ItemRules` on datapack reload
 
-**Source sets:** The project uses Fabric Loom's split environment feature. `src/main` is common/server-side; `src/client` is client-only. Mixins are declared separately in `drop-stacker.mixins.json` (server) and `drop-stacker.client.mixins.json` (client).
+**Performance invariants** (these are the reasons the code looks the way it does — don't undo them):
+- Scans stagger by `(tickCount + entity.id)`, never bare `tickCount`, or every drop from one mob scans on the same tick.
+- Never call `BuiltInRegistries.ITEM.getKey(...).toString()` in the scan predicate; use the resolved `ItemRules` sets.
+- Use the `Level.getEntities(test, box, predicate, outList, limit)` overload with the shared scratch list — the `getEntitiesOfClass` variant allocates a fresh `ArrayList` of every match.
+- Merging must produce a **new** `ItemStack` and go through `setItem`. `SynchedEntityData.set` compares by equality, so mutating the tracked stack's count in place never syncs to clients.
+- Rebuild the label only when `StackLabel.labelKey` changes; each rebuild is a component tree plus a packet to every tracking player.
 
-**Mixin refmap:** `drop-stacker.refmap.json` — generated at build time, maps obfuscated names.
+**Source sets:** The project uses Fabric Loom's split environment feature. `src/main` is common/server-side; `src/client` is client-only and currently empty. Mixins are declared separately in `drop-stacker.mixins.json` (server) and `drop-stacker.client.mixins.json` (client).
 
-**Config defaults:** `maxStackSize=1000`, scan radius `5x2x5` blocks, `scanInterval=5` ticks. Config auto-creates with defaults if missing.
-
-**Visual feedback:** Stacked items display their count as a custom name — yellow for counts >64, white for ≤64.
+**Testing:** Fabric API ships no gametest module for 26.2. To test, enable RCON in `run/server.properties` and drive `./gradlew runServer` with `/summon item ...` commands. Note that a dev server with **no player connected does not tick item entities reliably** — merge-on-spawn is testable headlessly, but the periodic tick scan needs `runClient` with a player in range.
 
 ## Minecraft version
 
-Targets Minecraft `26.1.2` with Java 25. The `minecraft_version` in `gradle.properties` controls which Minecraft mappings and API version Loom uses.
+Targets Minecraft `26.2` with Java 25 (Gradle provisions the JDK 25 toolchain via the foojay resolver in `settings.gradle.kts`). The `minecraft_version` in `gradle.properties` controls which Minecraft mappings and API version Loom uses.
+
+Mappings are **Mojang official**, not Yarn — there is no `mappings(...)` line in `build.gradle.kts`. Note `ResourceLocation` is named `Identifier` in this era, and Loom 1.16 has no `modImplementation` (intermediary is `0.0.0`, so mod deps are consumed unremapped via plain `implementation`).

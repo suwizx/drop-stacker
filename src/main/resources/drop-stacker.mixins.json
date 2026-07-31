@@ -3,7 +3,8 @@
 	"package": "dev.suwizx.dropstacker.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"mixins": [
-		"ItemEntityMixin"
+		"ItemEntityMixin",
+		"ServerLevelMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

@@ -13,5 +13,11 @@ pluginManagement {
 	}
 }
 
+// Lets Gradle provision the Java 25 toolchain this Minecraft version needs, so the build and the
+// runClient/runServer tasks work without a system-wide JDK 25 install.
+plugins {
+	id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+}
+
 // Should match your modid
 rootProject.name = "drop-stacker"

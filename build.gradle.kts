@@ -3,7 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
 	id("net.fabricmc.fabric-loom")
 	`maven-publish`
-	id("org.jetbrains.kotlin.jvm") version "2.3.20"
+	id("org.jetbrains.kotlin.jvm") version "2.4.10"
 }
 
 version = providers.gradleProperty("mod_version").get()
@@ -40,6 +40,8 @@ dependencies {
 	implementation("net.fabricmc:fabric-loader:${providers.gradleProperty("loader_version").get()}")
 
 	// Fabric API. This is technically optional, but you probably want it anyway.
+	// Loom 1.16 has no modImplementation: intermediary is 0.0.0 for this Minecraft
+	// era, so mod dependencies are consumed directly with no remapping step.
 	implementation("net.fabricmc.fabric-api:fabric-api:${providers.gradleProperty("fabric_api_version").get()}")
 	implementation("net.fabricmc:fabric-language-kotlin:${providers.gradleProperty("fabric_kotlin_version").get()}")
 }
@@ -63,6 +65,12 @@ kotlin {
 }
 
 java {
+	// Minecraft 26.2 runs on Java 25. Pinning the toolchain means compilation and the run tasks all
+	// use it, rather than silently falling back to whatever JVM Gradle happens to be running on.
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+
 	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
 	// if it is present.
 	// If you remove this line, sources will not be generated.

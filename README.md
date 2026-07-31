@@ -4,54 +4,106 @@ A Fabric mod for Minecraft that automatically stacks dropped item entities on th
 
 ## Features
 
-- **Smart Stacking:** Dropped items of the same type and NBT automatically merge within a configurable radius.
-- **Limitless Piles:** Stacks beyond vanilla's 64-item limit — up to your configured `maxStackSize`.
+- **Instant Merging:** New drops are absorbed into a nearby pile the moment they spawn — in the same tick, not after a scan interval. A mob's drops collapse before you see them land.
+- **Whole-Pile Collapse:** Each merge pass drains every compatible neighbour at once, so a 100-item pile becomes one entity in a single pass instead of one item per pass.
+- **Limitless Piles:** Stacks beyond vanilla's 64-item limit — up to your configured `maxStackSize`, with per-item overrides.
 - **Visual Feedback:** Colorful stack count label displayed above items (configurable thresholds).
 - **Despawn Timer:** Optional countdown on the label with urgency-based color coding (supports infinite items with `∞`).
-- **Performance Optimized:** Smart throttling reduces network bandwidth by updating labels less frequently for "healthy" items and staggering updates across ticks.
-- **Vanilla Parity:** Merging preserves the "best" state (minimum age and maximum pickup delay) to prevent despawn bugs or pickup exploits.
-- **Item Blacklist:** Choose specific items that should never be stacked.
-- **Server-Side Only:** All logic is handled on the server to prevent client-side desync.
+- **Adaptive Scanning:** Idle piles progressively back off from scanning (up to `maxScanInterval`), so a world full of settled items costs almost nothing. Safe because new drops push into piles on spawn rather than waiting to be polled.
+- **Item Rules:** Blacklist, whitelist, and per-item stack-size overrides — all accepting item tags (`#minecraft:logs`) as well as exact ids.
+- **Runtime Control:** `/dropstacker` reloads config, reports stats, and tunes settings without a restart.
+- **Respects Named Items:** An item entity with its own custom name is never relabelled or silently absorbed into another pile.
+- **Vanilla Parity:** Merging honours vanilla's infinite-lifetime, near-despawn, and infinite-pickup-delay guards, and keeps the longest pickup delay so merging can't shorten it.
+- **Server-Side Only:** All logic runs on the server. Vanilla clients see counts and timers with no mod installed.
 
 ## Requirements
 
-- Minecraft 26.1.2
-- [Fabric Loader](https://fabricmc.net/) 0.19.1+
+- Minecraft 26.2
+- [Fabric Loader](https://fabricmc.net/) 0.19.3+
 - [Fabric API](https://modrinth.com/mod/fabric-api)
 - [Fabric Language Kotlin](https://modrinth.com/mod/fabric-language-kotlin)
 - Java 25+
 
+## Commands
+
+`/dropstacker` requires permission level 2 (gamemasters).
+
+| Command | Description |
+|---|---|
+| `/dropstacker reload` | Reload the config file from disk |
+| `/dropstacker stats` | Merge passes, entities collapsed, and current settings |
+| `/dropstacker resetstats` | Reset the counters |
+| `/dropstacker toggle` | Enable/disable stacking at runtime |
+| `/dropstacker set maxStackSize <n>` | Change the stack cap |
+| `/dropstacker set scanInterval <n>` | Change the scan interval |
+| `/dropstacker set radius <n>` | Change the horizontal scan radius |
+| `/dropstacker set verticalRadius <n>` | Change the vertical scan radius |
+
 ## Configuration
 
-The config file is created automatically at `.minecraft/config/drop-stacker.json`. Fields update automatically on restart if you upgrade the mod.
+The config file is created automatically at `.minecraft/config/drop-stacker.json` (or `config/drop-stacker.json` on a server). Fields update automatically on restart if you upgrade the mod.
 
 ```json
 {
+  "enabled": true,
+  "mergeOnSpawn": true,
   "maxStackSize": 1000,
-  "scanRadiusX": 5.0,
-  "scanRadiusY": 2.0,
-  "scanRadiusZ": 5.0,
+  "radius": 5.0,
+  "verticalRadius": 2.0,
   "scanInterval": 5,
+  "maxScanInterval": 100,
+  "maxMergePerPass": 64,
+  "ageInheritance": "YOUNGEST",
+  "labelMode": "ALWAYS",
   "showDespawnTimer": true,
   "countLowThreshold": 64,
   "countHighThreshold": 500,
   "hideSingleItemLabel": false,
+  "despawnTicks": 6000,
   "blacklist": [],
-  "despawnTicks": 6000
+  "whitelist": [],
+  "overrides": {}
 }
 ```
 
 | Field | Description | Default |
 |---|---|---|
+| `enabled` | Master switch for all stacking | `true` |
+| `mergeOnSpawn` | Merge new drops instantly as they spawn | `true` |
 | `maxStackSize` | Maximum items per stacked entity | `1000` |
-| `scanRadiusX/Y/Z` | Scan radius on each axis (blocks) | `5.0 / 2.0 / 5.0` |
-| `scanInterval` | Ticks between each merge scan | `5` |
+| `radius` | Horizontal scan radius (blocks) | `5.0` |
+| `verticalRadius` | Vertical scan radius (blocks) | `2.0` |
+| `scanInterval` | Ticks between merge scans for an active pile | `5` |
+| `maxScanInterval` | Slowest scan rate an idle pile backs off to | `100` |
+| `maxMergePerPass` | Max neighbours absorbed in one pass | `64` |
+| `ageInheritance` | Despawn timer on merge: `YOUNGEST`, `KEEP_RECEIVER`, or `OLDEST` | `YOUNGEST` |
+| `labelMode` | When to show the label: `ALWAYS`, `STACKED_ONLY`, or `NEVER` | `ALWAYS` |
 | `showDespawnTimer` | Show despawn countdown on the label | `true` |
 | `countLowThreshold` | Count at which the label turns Yellow | `64` |
 | `countHighThreshold` | Count at which the label turns Red | `500` |
 | `hideSingleItemLabel`| Hide the label if the stack only has 1 item | `false` |
-| `blacklist` | List of item IDs to ignore (e.g. `["minecraft:diamond"]`) | `[]` |
 | `despawnTicks` | World despawn rate (matches timer to server settings) | `6000` |
+| `blacklist` | Items that are never stacked | `[]` |
+| `whitelist` | If non-empty, *only* these items are stacked | `[]` |
+| `overrides` | Per-item stack caps | `{}` |
+
+### Item rules
+
+`blacklist`, `whitelist`, and `overrides` all accept exact item ids and item tags (prefixed with `#`):
+
+```json
+{
+  "blacklist": ["minecraft:elytra", "#minecraft:shulker_boxes"],
+  "overrides": {
+    "minecraft:cobblestone": 5000,
+    "#minecraft:logs": 512
+  }
+}
+```
+
+### A note on `ageInheritance`
+
+The default `YOUNGEST` means a pile inherits the longest remaining lifetime when it absorbs a drop — so a pile next to a farm keeps resetting its despawn timer and effectively never despawns. That is convenient, but on a busy server it lets item piles accumulate indefinitely. Set `KEEP_RECEIVER` for vanilla despawn behaviour.
 
 ## Building
 
@@ -59,7 +111,7 @@ The config file is created automatically at `.minecraft/config/drop-stacker.json
 ./gradlew build
 ```
 
-Output JAR is in `build/libs/`.
+Output JAR is in `build/libs/`. Gradle provisions the required Java 25 toolchain automatically.
 
 ## License
 

@@ -2,11 +2,15 @@ package dev.suwizx.dropstacker.mixin
 
 import dev.suwizx.dropstacker.accessor.ItemEntityAccessor
 import dev.suwizx.dropstacker.config.DropStackerConfig
+import dev.suwizx.dropstacker.config.LabelMode
+import dev.suwizx.dropstacker.stack.StackEngine
+import dev.suwizx.dropstacker.stack.StackLabel
+import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.item.ItemEntity
 import net.minecraft.world.item.ItemStack
-import net.minecraft.network.chat.Component
 import org.spongepowered.asm.mixin.Mixin
 import org.spongepowered.asm.mixin.Shadow
+import org.spongepowered.asm.mixin.Unique
 import org.spongepowered.asm.mixin.injection.At
 import org.spongepowered.asm.mixin.injection.Inject
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo
@@ -15,13 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable
 @Mixin(ItemEntity::class)
 abstract class ItemEntityMixin : ItemEntityAccessor {
     @Shadow
-    abstract fun getItem() : ItemStack
-
-    @Shadow
-    protected abstract fun tryToMerge(other: ItemEntity)
-
-    @Shadow
-    protected abstract fun isMergable(): Boolean
+    abstract fun getItem(): ItemStack
 
     @Shadow
     private var pickupDelay = 0
@@ -29,179 +27,140 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
     @Shadow
     private var age = 0
 
-    override fun invokeUpdateStackLabel(count: Int) {
-        this.updateStackLabel(count)
+    /** The last [StackLabel.labelKey] actually written to this entity's custom name. */
+    @Unique
+    private var dropstackerLabelKey: Long = Long.MIN_VALUE + 1
+
+    /** Current adaptive scan interval, grown while scans keep finding nothing. */
+    @Unique
+    private var dropstackerBackoff: Int = 0
+
+    /**
+     * The exact component this mixin last wrote to `customName`.
+     *
+     * Comparing against it is how a foreign name is detected. Tracking "the name it had when we
+     * first saw it" instead would be unreliable: entity NBT is read *after* `setItem` runs, so a
+     * `/summon ... {CustomName:...}` replaces our label a moment after we apply it.
+     */
+    @Unique
+    private var dropstackerAppliedLabel: Component? = null
+
+    // --- ItemEntityAccessor ---
+
+    override fun dropstacker_pickupDelay(): Int = this.pickupDelay
+
+    override fun dropstacker_setPickupDelay(value: Int) {
+        this.pickupDelay = value
     }
 
-    override fun invokeGetAge(): Int = this.age
+    override fun dropstacker_setAge(value: Int) {
+        this.age = value
+    }
 
-    override fun invokeGetPickupDelay(): Int = this.pickupDelay
+    override fun dropstacker_resetBackoff() {
+        this.dropstackerBackoff = DropStackerConfig.scanInterval
+    }
+
+    override fun dropstacker_hasForeignName(): Boolean {
+        val current = (this as Any as ItemEntity).customName ?: return false
+        return current != dropstackerAppliedLabel
+    }
+
+    override fun dropstacker_refreshLabel() {
+        val entity = this as Any as ItemEntity
+        val count = this.getItem().count
+
+        // Never overwrite a genuine name.
+        if (dropstacker_hasForeignName()) return
+
+        val key = StackLabel.labelKey(entity, count)
+        if (key == dropstackerLabelKey) return
+        dropstackerLabelKey = key
+
+        val label = StackLabel.build(entity, count)
+        dropstackerAppliedLabel = label
+        if (label == null) {
+            entity.customName = null
+            entity.isCustomNameVisible = false
+        } else {
+            entity.customName = label
+            entity.isCustomNameVisible = true
+        }
+    }
+
+    // --- injections ---
 
     @Inject(method = ["setItem"], at = [At("TAIL")])
-    private fun onSetItem(stack: ItemStack, ci: CallbackInfo) {
-        this.updateStackLabel(stack.count)
+    private fun dropstackerOnSetItem(stack: ItemStack, ci: CallbackInfo) {
+        dropstacker_refreshLabel()
     }
 
     @Inject(method = ["tick"], at = [At("HEAD")])
-    private fun onTick(ci: CallbackInfo) {
+    private fun dropstackerOnTick(ci: CallbackInfo) {
         val entity = this as Any as ItemEntity
-        val stack = entity.item
 
-        if (entity.level().isClientSide || !entity.isAlive) return
+        // Ordered cheapest-first: the old code read the synched ItemStack before this check, so
+        // every client paid a synched-data lookup per item entity per tick for nothing.
+        if (entity.level().isClientSide || !DropStackerConfig.enabled || !entity.isAlive) return
 
-        // Smart Throttling: Refresh the label based on urgency to save bandwidth
-        if (DropStackerConfig.showDespawnTimer) {
-            val interval = when {
-                this.age <= -32768    -> 600 // Infinite: update every 30s just in case
-                DropStackerConfig.despawnTicks - this.age < 600  -> 20  // Urgent (<30s): every second
-                DropStackerConfig.despawnTicks - this.age < 2400 -> 60  // Warning (<2m): every 3 seconds
-                else                  -> 100 // Healthy (>2m): every 5 seconds
-            }
-
-            // Stagger updates using entity ID to prevent network spikes. Using tickCount ensures constant progress.
-            if ((entity.tickCount + entity.id) % interval == 0) {
-                updateStackLabel(stack.count)
+        if (DropStackerConfig.showDespawnTimer && DropStackerConfig.labelMode != LabelMode.NEVER) {
+            // The rendered timer changes at most once per second, so checking more often than every
+            // 20 ticks can only ever be wasted work. Staggered by entity id so a farm's worth of
+            // drops don't all rebuild their labels on the same tick.
+            if ((entity.tickCount + entity.id) % 20 == 0) {
+                dropstacker_refreshLabel()
             }
         }
 
-        if (stack.count < DropStackerConfig.maxStackSize
-            && isMergable()
-            && entity.tickCount % DropStackerConfig.scanInterval == 0
-        ) {
-            val targetEntity = entity.level().getEntitiesOfClass(
-                ItemEntity::class.java,
-                entity.boundingBox.inflate(
-                    DropStackerConfig.scanRadiusX,
-                    DropStackerConfig.scanRadiusY,
-                    DropStackerConfig.scanRadiusZ
-                )
-            ) {
-                it != entity
-                && it.isAlive
-                && (it as Any as ItemEntityMixin).isMergable()
-                && ItemStack.isSameItemSameComponents(stack, it.item)
-            }.firstOrNull()
+        if (dropstackerBackoff <= 0) dropstackerBackoff = DropStackerConfig.scanInterval
+        if ((entity.tickCount + entity.id) % dropstackerBackoff != 0) return
 
-            if (targetEntity != null && entity.uuid.lessThan(targetEntity.uuid)) {
-                this.tryToMerge(targetEntity)
-            }
+        if (!StackEngine.isMergeable(entity, this.getItem())) return
+
+        if (StackEngine.absorbNeighbours(entity) == 0) {
+            // Nothing nearby: back off, up to maxScanInterval. This is only safe because new drops
+            // push into existing piles on spawn (ServerLevelMixin) rather than waiting to be polled.
+            val ceiling = DropStackerConfig.maxScanInterval.coerceAtLeast(DropStackerConfig.scanInterval)
+            dropstackerBackoff = (dropstackerBackoff * 2).coerceAtMost(ceiling)
         }
     }
 
+    /**
+     * Vanilla runs its own neighbour scan every 40 ticks. [StackEngine] fully replaces it, so
+     * leaving it enabled would mean two merge systems scanning the same entities.
+     */
+    @Inject(method = ["mergeWithNeighbours"], at = [At("HEAD")], cancellable = true)
+    private fun dropstackerOnMergeWithNeighbours(ci: CallbackInfo) {
+        if (DropStackerConfig.enabled) ci.cancel()
+    }
 
+    /** Widens vanilla's stack-size ceiling to the configured maximum, keeping every other guard. */
     @Inject(method = ["isMergable"], at = [At("HEAD")], cancellable = true)
-    private fun onCanMerge(callback: CallbackInfoReturnable<Boolean>) {
+    private fun dropstackerOnIsMergable(callback: CallbackInfoReturnable<Boolean>) {
+        if (!DropStackerConfig.enabled) return
         val entity = this as Any as ItemEntity
-        // Bug fix: large stacks must still respect pickup delay and life state
-        if (!entity.isAlive || this.pickupDelay > 0) {
-            callback.setReturnValue(false)
-            return
-        }
-
-        val stack = this.getItem()
-        val count = stack.count
-        val configMax = DropStackerConfig.maxStackSize
-
-        // Blacklist check
-        val itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item).toString()
-        if (DropStackerConfig.blacklist.contains(itemId)) {
-            callback.setReturnValue(false)
-            return
-        }
-
-        when {
-            count >= configMax -> callback.setReturnValue(false)
-            count >= stack.maxStackSize -> callback.setReturnValue(true)
-        }
+        callback.returnValue = StackEngine.isMergeable(entity, this.getItem())
     }
 
+    /**
+     * Kept so callers outside the mod (other mods, or any vanilla path we do not cancel) still get
+     * stack-size-aware merging rather than vanilla's 64 cap.
+     */
     @Inject(method = ["tryToMerge"], at = [At("HEAD")], cancellable = true)
-    private fun onTryMerge(other: ItemEntity, ci: CallbackInfo) {
+    private fun dropstackerOnTryToMerge(other: ItemEntity, ci: CallbackInfo) {
+        if (!DropStackerConfig.enabled) return
         val entity = this as Any as ItemEntity
         val thisStack = this.getItem()
-        val otherStack = other.item
-        val maxStackSize = DropStackerConfig.maxStackSize
+        if (!ItemStack.isSameItemSameComponents(thisStack, other.item)) return
 
-        if (ItemStack.isSameItemSameComponents(thisStack, otherStack)) {
-            ci.cancel()
+        ci.cancel()
 
-            if (thisStack.count >= maxStackSize) return
-
-            val canReceive = maxStackSize - thisStack.count
-            val transferAmount = minOf(otherStack.count, canReceive)
-
-            if (transferAmount > 0) {
-                thisStack.count += transferAmount
-                otherStack.count -= transferAmount
-
-                // Vanilla Parity: Preserve the 'best' state
-                // Keep the item that has more time left (smaller age)
-                this.age = minOf(this.age, (other as ItemEntityAccessor).invokeGetAge())
-                // Keep the longest pickup delay to prevent exploitation
-                this.pickupDelay = maxOf(this.pickupDelay, (other as ItemEntityAccessor).invokeGetPickupDelay())
-
-                updateStackLabel(thisStack.count)
-
-                if (otherStack.isEmpty) {
-                    other.discard()
-                } else {
-                    (other as ItemEntityAccessor).invokeUpdateStackLabel(otherStack.count)
-                }
-            }
+        val max = StackEngine.effectiveMax(thisStack)
+        if (thisStack.count >= max) return
+        val taken = StackEngine.drain(entity, other, max - thisStack.count)
+        if (taken > 0) {
+            // New instance so the synched stack actually changes; also refreshes the label.
+            entity.item = thisStack.copyWithCount(thisStack.count + taken)
         }
     }
-
-    private fun java.util.UUID.lessThan(other: java.util.UUID): Boolean {
-        return this.compareTo(other) < 0
-    }
-
-    private fun updateStackLabel(count: Int) {
-        val entity = this as Any as ItemEntity
-        
-        // Handle single item visibility and empty stacks
-        if (count <= 0 || (count == 1 && DropStackerConfig.hideSingleItemLabel)) {
-            entity.customName = null
-            entity.isCustomNameVisible = false
-            return
-        }
-
-        // Count color: configurable thresholds
-        val countColor = when {
-            count >= DropStackerConfig.countHighThreshold -> net.minecraft.ChatFormatting.RED
-            count >= DropStackerConfig.countLowThreshold  -> net.minecraft.ChatFormatting.YELLOW
-            else                                          -> net.minecraft.ChatFormatting.GREEN
-        }
-
-        val text = Component.empty()
-            .append(Component.literal("[").withStyle(net.minecraft.ChatFormatting.GOLD))
-            .append(Component.literal("×$count").withStyle(countColor))
-
-        if (DropStackerConfig.showDespawnTimer) {
-            if (this.age <= -32768) {
-                text.append(Component.literal(" | ").withStyle(net.minecraft.ChatFormatting.AQUA))
-                text.append(Component.literal("∞").withStyle(net.minecraft.ChatFormatting.GREEN))
-            } else {
-                val remainingTicks = DropStackerConfig.despawnTicks - this.age
-                if (remainingTicks > 0) {
-                    val totalSeconds = remainingTicks / 20
-                    val minutes = totalSeconds / 60
-                    val seconds = totalSeconds % 60
-                    // Timer color: green plenty of time, yellow getting close, red urgent
-                    val timerColor = when {
-                        remainingTicks < 600  -> net.minecraft.ChatFormatting.RED
-                        remainingTicks < 2400 -> net.minecraft.ChatFormatting.YELLOW
-                        else                  -> net.minecraft.ChatFormatting.GREEN
-                    }
-                    text.append(Component.literal(" | ").withStyle(net.minecraft.ChatFormatting.AQUA))
-                    text.append(Component.literal("${minutes}:${seconds.toString().padStart(2, '0')}").withStyle(timerColor))
-                }
-            }
-        }
-
-        text.append(Component.literal("]").withStyle(net.minecraft.ChatFormatting.GOLD))
-
-        entity.customName = text
-        entity.isCustomNameVisible = true
-    }
-
 }
