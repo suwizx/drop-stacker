@@ -1,0 +1,22 @@
+{
+	"schemaVersion": 1,
+	"id": "drop-stacker-gametest",
+	"version": "1.0.0",
+	"name": "Drop Stacker Game Tests",
+	"description": "Server gametests for Drop Stacker. Development only; never shipped.",
+	"license": "MIT",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-gametest": [
+			{
+				"value": "dev.suwizx.dropstacker.gametest.DropStackerGameTests",
+				"adapter": "kotlin"
+			}
+		]
+	},
+	"depends": {
+		"drop-stacker": "*",
+		"fabric-gametest-api-v1": "*",
+		"fabric-language-kotlin": "*"
+	}
+}

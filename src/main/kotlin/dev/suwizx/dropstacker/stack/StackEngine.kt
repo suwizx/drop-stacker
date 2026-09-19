@@ -24,6 +24,12 @@ object StackEngine {
     /** Vanilla `ItemEntity.INFINITE_LIFETIME`. */
     private const val INFINITE_LIFETIME = -32768
 
+    /**
+     * Entity NBT key holding a pile's true count when it exceeds what the vanilla item codec can
+     * save (see the save/load hooks in `ItemEntityMixin`). Part of the on-disk format: never rename.
+     */
+    const val SAVED_COUNT_KEY = "DropStackerCount"
+
     private val ITEM_ENTITY_TEST: EntityTypeTest<net.minecraft.world.entity.Entity, ItemEntity> =
         EntityTypeTest.forClass(ItemEntity::class.java)
 
