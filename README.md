@@ -18,8 +18,8 @@ A Fabric mod for Minecraft that automatically stacks dropped item entities on th
 
 ## Requirements
 
-- Minecraft 26.2
-- [Fabric Loader](https://fabricmc.net/) 0.19.3+
+- Minecraft 26.3
+- [Fabric Loader](https://fabricmc.net/) 0.19.5+
 - [Fabric API](https://modrinth.com/mod/fabric-api)
 - [Fabric Language Kotlin](https://modrinth.com/mod/fabric-language-kotlin)
 - Java 25+

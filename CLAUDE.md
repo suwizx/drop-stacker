@@ -25,7 +25,7 @@ The output JAR is in `build/libs/`.
 
 ## Architecture
 
-This is a Fabric mod for Minecraft 26.2 written in Kotlin that automatically stacks dropped item entities on the ground.
+This is a Fabric mod for Minecraft 26.3 written in Kotlin that automatically stacks dropped item entities on the ground.
 
 **Core flow:** merging is *push*-based. `ServerLevelMixin` hooks `ServerLevel.addFreshEntity` so a new drop is absorbed into a nearby pile in the tick it spawns. `ItemEntityMixin` also runs a periodic scan as a safety net (for items that moved, or loaded from disk), with an adaptive backoff that slows idle piles down to `maxScanInterval`. All merging is server-side; a vanilla client needs no mod.
 
@@ -49,10 +49,10 @@ This is a Fabric mod for Minecraft 26.2 written in Kotlin that automatically sta
 
 **Source sets:** The project uses Fabric Loom's split environment feature. `src/main` is common/server-side; `src/client` is client-only and currently empty. Mixins are declared separately in `drop-stacker.mixins.json` (server) and `drop-stacker.client.mixins.json` (client).
 
-**Testing:** Fabric API ships no gametest module for 26.2. To test, enable RCON in `run/server.properties` and drive `./gradlew runServer` with `/summon item ...` commands. Note that a dev server with **no player connected does not tick item entities reliably** — merge-on-spawn is testable headlessly, but the periodic tick scan needs `runClient` with a player in range.
+**Testing:** there are no automated tests (Fabric API 0.161.0+26.3 ships `fabric-gametest-api-v1`, but the project does not use it yet). To test manually, enable RCON in `run/server.properties` and drive `./gradlew runServer` with `/summon item ...` commands. Note that a dev server with **no player connected does not tick item entities reliably** — merge-on-spawn is testable headlessly, but the periodic tick scan needs `runClient` with a player in range.
 
 ## Minecraft version
 
-Targets Minecraft `26.2` with Java 25 (Gradle provisions the JDK 25 toolchain via the foojay resolver in `settings.gradle.kts`). The `minecraft_version` in `gradle.properties` controls which Minecraft mappings and API version Loom uses.
+Targets Minecraft `26.3` with Java 25 (Gradle provisions the JDK 25 toolchain via the foojay resolver in `settings.gradle.kts`). The `minecraft_version` in `gradle.properties` controls which Minecraft mappings and API version Loom uses.
 
-Mappings are **Mojang official**, not Yarn — there is no `mappings(...)` line in `build.gradle.kts`. Note `ResourceLocation` is named `Identifier` in this era, and Loom 1.16 has no `modImplementation` (intermediary is `0.0.0`, so mod deps are consumed unremapped via plain `implementation`).
+Mappings are **Mojang official**, not Yarn — there is no `mappings(...)` line in `build.gradle.kts`. Note `ResourceLocation` is named `Identifier` in this era, and Loom 1.17 has no `modImplementation` (intermediary is `0.0.0`, so mod deps are consumed unremapped via plain `implementation`).
