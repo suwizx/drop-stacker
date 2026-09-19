@@ -9,12 +9,12 @@ pluginManagement {
 	}
 
 	plugins {
-		id("net.fabricmc.fabric-loom") version providers.gradleProperty("loom_version")
+		id("net.fabricmc.fabric-loom-remap") version providers.gradleProperty("loom_version")
 	}
 }
 
-// Lets Gradle provision the Java 25 toolchain this Minecraft version needs, so the build and the
-// runClient/runServer tasks work without a system-wide JDK 25 install.
+// Lets Gradle provision the Java 21 toolchain this Minecraft version needs, so the build and the
+// runClient/runServer tasks work without a system-wide JDK 21 install.
 plugins {
 	id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }

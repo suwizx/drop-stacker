@@ -5,18 +5,19 @@ import dev.suwizx.dropstacker.config.DropStackerConfig
 import dev.suwizx.dropstacker.config.LabelMode
 import dev.suwizx.dropstacker.stack.StackEngine
 import dev.suwizx.dropstacker.stack.StackLabel
+import net.minecraft.core.HolderLookup
+import net.minecraft.nbt.CompoundTag
+import net.minecraft.nbt.Tag
 import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.item.ItemEntity
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
-import net.minecraft.world.level.storage.ValueInput
-import net.minecraft.world.level.storage.ValueOutput
 import org.spongepowered.asm.mixin.Mixin
 import org.spongepowered.asm.mixin.Shadow
 import org.spongepowered.asm.mixin.Unique
 import org.spongepowered.asm.mixin.injection.At
 import org.spongepowered.asm.mixin.injection.Inject
-import org.spongepowered.asm.mixin.injection.ModifyArg
+import org.spongepowered.asm.mixin.injection.Redirect
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable
 
@@ -175,28 +176,29 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
     // restart, chunk reload, `/data merge`, portal trip). Only the disk format is patched: the
     // network codec has no such cap, so vanilla clients are unaffected.
 
-    /** Writes a vanilla-valid copy of the stack, capped at 99. The live stack is untouched. */
-    @ModifyArg(
+    /**
+     * Saves a vanilla-valid copy of the stack, capped at 99. The live stack is untouched. On 1.21.1
+     * `ItemStack.save` throws on an out-of-range count, so without this a big pile fails the save.
+     */
+    @Redirect(
         method = ["addAdditionalSaveData"],
         at = [
             At(
                 value = "INVOKE",
-                target = "Lnet/minecraft/world/level/storage/ValueOutput;store(Ljava/lang/String;Lcom/mojang/serialization/Codec;Ljava/lang/Object;)V",
+                target = "Lnet/minecraft/world/item/ItemStack;save(Lnet/minecraft/core/HolderLookup\$Provider;)Lnet/minecraft/nbt/Tag;",
             ),
         ],
-        index = 2,
     )
-    private fun dropstackerCapSavedStack(value: Any?): Any? {
-        val stack = value as? ItemStack ?: return value
-        if (stack.count <= Item.ABSOLUTE_MAX_STACK_SIZE) return stack
-        return stack.copyWithCount(Item.ABSOLUTE_MAX_STACK_SIZE)
+    private fun dropstackerSaveCappedStack(stack: ItemStack, provider: HolderLookup.Provider): Tag {
+        if (stack.count <= Item.ABSOLUTE_MAX_STACK_SIZE) return stack.save(provider)
+        return stack.copyWithCount(Item.ABSOLUTE_MAX_STACK_SIZE).save(provider)
     }
 
     /** Records the true count alongside the capped stack. */
     @Inject(method = ["addAdditionalSaveData"], at = [At("TAIL")])
-    private fun dropstackerOnSave(output: ValueOutput, ci: CallbackInfo) {
+    private fun dropstackerOnSave(tag: CompoundTag, ci: CallbackInfo) {
         val count = this.getItem().count
-        if (count > Item.ABSOLUTE_MAX_STACK_SIZE) output.putInt(StackEngine.SAVED_COUNT_KEY, count)
+        if (count > Item.ABSOLUTE_MAX_STACK_SIZE) tag.putInt(StackEngine.SAVED_COUNT_KEY, count)
     }
 
     /**
@@ -205,8 +207,8 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
      * Deliberately not clamped to the current `maxStackSize`: lowering the config must not delete items.
      */
     @Inject(method = ["readAdditionalSaveData"], at = [At("TAIL")])
-    private fun dropstackerOnLoad(input: ValueInput, ci: CallbackInfo) {
-        val saved = input.getIntOr(StackEngine.SAVED_COUNT_KEY, 0)
+    private fun dropstackerOnLoad(tag: CompoundTag, ci: CallbackInfo) {
+        val saved = tag.getInt(StackEngine.SAVED_COUNT_KEY)
         val stack = this.getItem()
         if (stack.isEmpty || stack.count != Item.ABSOLUTE_MAX_STACK_SIZE || saved <= stack.count) return
         // New instance through setItem, so the change syncs and the label refreshes.

@@ -25,7 +25,7 @@ The output JAR is in `build/libs/`.
 
 ## Architecture
 
-This is a Fabric mod for Minecraft 26.3 written in Kotlin that automatically stacks dropped item entities on the ground.
+This is a Fabric mod for Minecraft 1.21.1 written in Kotlin (the `1.21.1` backport branch; `main` targets the latest Minecraft) that automatically stacks dropped item entities on the ground.
 
 **Core flow:** merging is *push*-based. `ServerLevelMixin` hooks `ServerLevel.addFreshEntity` so a new drop is absorbed into a nearby pile in the tick it spawns. `ItemEntityMixin` also runs a periodic scan as a safety net (for items that moved, or loaded from disk), with an adaptive backoff that slows idle piles down to `maxScanInterval`. All merging is server-side; a vanilla client needs no mod.
 
@@ -51,12 +51,14 @@ This is a Fabric mod for Minecraft 26.3 written in Kotlin that automatically sta
 
 **Source sets:** The project uses Fabric Loom's split environment feature. `src/main` is common/server-side; `src/client` is client-only and currently empty. Mixins are declared separately in `drop-stacker.mixins.json` (server) and `drop-stacker.client.mixins.json` (client).
 
-**Testing:** **run `./gradlew build` after every change** — Loom wires `runGameTest` into `check`, so it runs the Fabric server gametests headlessly and fails the build on any failing test. `./gradlew runGameTest` runs just the tests. Tests live in the separate `gametest` source set (`src/gametest/kotlin/.../gametest/DropStackerGameTests.kt`, its own `drop-stacker-gametest` mod), so none of it ships in the release jar. Add a gametest with every fix or feature; for a bug, write the test first and watch it fail. Note that in 26.3 entity type constants live in `EntityTypes`, not `EntityType`.
+**Testing:** **run `./gradlew build` after every change** — Loom wires `runGameTest` into `check`, so it runs the Fabric server gametests headlessly and fails the build on any failing test. `./gradlew runGameTest` runs just the tests. Tests live in the separate `gametest` source set (`src/gametest/kotlin/.../gametest/DropStackerGameTests.kt`, its own `drop-stacker-gametest` mod), so none of it ships in the release jar. Add a gametest with every fix or feature; for a bug, write the test first and watch it fail. Gametests here use the pre-1.21.5 API: the class implements `FabricGameTest` and methods use vanilla `@GameTest(template = FabricGameTest.EMPTY_STRUCTURE)`.
 
 For manual testing beyond the gametests, enable RCON in `run/server.properties` and drive `./gradlew runServer` with `/summon item ...` commands. Note that a dev server with **no player connected does not tick item entities reliably** — merge-on-spawn is testable headlessly, but the periodic tick scan needs `runClient` with a player in range.
 
 ## Minecraft version
 
-Targets Minecraft `26.3` with Java 25 (Gradle provisions the JDK 25 toolchain via the foojay resolver in `settings.gradle.kts`). The `minecraft_version` in `gradle.properties` controls which Minecraft mappings and API version Loom uses.
+Targets Minecraft `1.21.1` with Java 21 (Gradle provisions the JDK 21 toolchain via the foojay resolver in `settings.gradle.kts`). The `minecraft_version` in `gradle.properties` controls which Minecraft mappings and API version Loom uses.
 
-Mappings are **Mojang official**, not Yarn — there is no `mappings(...)` line in `build.gradle.kts`. Note `ResourceLocation` is named `Identifier` in this era, and Loom 1.17 has no `modImplementation` (intermediary is `0.0.0`, so mod deps are consumed unremapped via plain `implementation`).
+1.21.1 is still obfuscated, so this branch uses the `net.fabricmc.fabric-loom-remap` plugin with `mappings(loom.officialMojangMappings())` and `modImplementation`: sources use Mojang names (`ResourceLocation`, not `Identifier`), and `remapJar` turns them into intermediary for the release jar.
+
+**Mixin remapping:** the mixins are Kotlin, so the Mixin annotation processor never runs and there is no refmap. `loom { mixin { useLegacyMixinAp = false } }` makes tiny-remapper rewrite the `@Inject`/`@At` strings in the remapped jar. Without it the release jar crashes on load even though `runServer` and the gametests (which run on Mojang names) pass. After changing a mixin, check the remapped jar in a real Fabric 1.21.1 server, not just the dev environment.

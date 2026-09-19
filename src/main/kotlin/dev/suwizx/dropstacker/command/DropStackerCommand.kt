@@ -17,8 +17,8 @@ object DropStackerCommand {
     fun register(dispatcher: CommandDispatcher<CommandSourceStack>) {
         dispatcher.register(
             Commands.literal("dropstacker")
-                // LEVEL_GAMEMASTERS is the permission-level-2 check.
-                .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                // Permission level 2 (gamemasters).
+                .requires { it.hasPermission(2) }
                 .then(
                     Commands.literal("reload").executes { ctx ->
                         DropStackerConfig.load()

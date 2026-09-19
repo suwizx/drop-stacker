@@ -1,7 +1,7 @@
 {
 	"required": true,
 	"package": "dev.suwizx.dropstacker.mixin",
-	"compatibilityLevel": "JAVA_25",
+	"compatibilityLevel": "JAVA_21",
 	"mixins": [
 		"ItemEntityMixin",
 		"ServerLevelMixin"
@@ -11,6 +11,5 @@
 	},
 	"overwrites": {
 		"requireAnnotations": true
-	},
-	"refmap": "drop-stacker.refmap.json"
+	}
 }

@@ -18,11 +18,11 @@ A Fabric mod for Minecraft that automatically stacks dropped item entities on th
 
 ## Requirements
 
-- Minecraft 26.3
+- Minecraft 1.21.1
 - [Fabric Loader](https://fabricmc.net/) 0.19.5+
 - [Fabric API](https://modrinth.com/mod/fabric-api)
 - [Fabric Language Kotlin](https://modrinth.com/mod/fabric-language-kotlin)
-- Java 25+
+- Java 21+
 
 ## Commands
 
@@ -111,7 +111,7 @@ The default `YOUNGEST` means a pile inherits the longest remaining lifetime when
 ./gradlew build
 ```
 
-Output JAR is in `build/libs/`. Gradle provisions the required Java 25 toolchain automatically.
+Output JAR is in `build/libs/`. Gradle provisions the required Java 21 toolchain automatically.
 
 ## License
 

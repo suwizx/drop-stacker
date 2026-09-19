@@ -2,7 +2,7 @@ package dev.suwizx.dropstacker.config
 
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.core.registries.Registries
-import net.minecraft.resources.Identifier
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.tags.TagKey
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
@@ -81,14 +81,14 @@ object ItemRules {
             if (entry.isEmpty()) continue
 
             if (entry.startsWith("#")) {
-                val id = Identifier.tryParse(entry.substring(1))
+                val id = ResourceLocation.tryParse(entry.substring(1))
                 if (id == null) {
                     logger.warn("Ignoring malformed item tag '{}'", entry)
                     continue
                 }
                 tags += TagKey.create(Registries.ITEM, id)
             } else {
-                val id = Identifier.tryParse(entry)
+                val id = ResourceLocation.tryParse(entry)
                 if (id == null) {
                     logger.warn("Ignoring malformed item id '{}'", entry)
                     continue
@@ -108,11 +108,11 @@ object ItemRules {
         ensureResolved()
 
         if (blockedItems.isNotEmpty() && stack.item in blockedItems) return false
-        if (blockedTags.isNotEmpty() && blockedTags.any { stack.typeHolder().`is`(it) }) return false
+        if (blockedTags.isNotEmpty() && blockedTags.any { stack.`is`(it) }) return false
 
         if (!whitelistActive) return true
         if (allowedItems.isNotEmpty() && stack.item in allowedItems) return true
-        return allowedTags.isNotEmpty() && allowedTags.any { stack.typeHolder().`is`(it) }
+        return allowedTags.isNotEmpty() && allowedTags.any { stack.`is`(it) }
     }
 
     /** The maximum count [stack] may be stacked to, honouring per-item overrides. */
@@ -124,7 +124,7 @@ object ItemRules {
         }
         if (tagOverrides.isNotEmpty()) {
             for ((tag, limit) in tagOverrides) {
-                if (stack.typeHolder().`is`(tag)) return limit
+                if (stack.`is`(tag)) return limit
             }
         }
         return DropStackerConfig.maxStackSize
