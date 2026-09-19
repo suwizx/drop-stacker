@@ -7,12 +7,16 @@ import dev.suwizx.dropstacker.stack.StackEngine
 import dev.suwizx.dropstacker.stack.StackLabel
 import net.minecraft.network.chat.Component
 import net.minecraft.world.entity.item.ItemEntity
+import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
+import net.minecraft.world.level.storage.ValueInput
+import net.minecraft.world.level.storage.ValueOutput
 import org.spongepowered.asm.mixin.Mixin
 import org.spongepowered.asm.mixin.Shadow
 import org.spongepowered.asm.mixin.Unique
 import org.spongepowered.asm.mixin.injection.At
 import org.spongepowered.asm.mixin.injection.Inject
+import org.spongepowered.asm.mixin.injection.ModifyArg
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable
 
@@ -162,5 +166,50 @@ abstract class ItemEntityMixin : ItemEntityAccessor {
             // New instance so the synched stack actually changes; also refreshes the label.
             entity.item = thisStack.copyWithCount(thisStack.count + taken)
         }
+    }
+
+    // --- persistence ---
+    //
+    // Vanilla's disk codec for ItemStack only accepts counts of 1..99, so a bigger pile failed to
+    // encode, was saved with no `Item` at all, and was discarded as empty on the next load (world
+    // restart, chunk reload, `/data merge`, portal trip). Only the disk format is patched: the
+    // network codec has no such cap, so vanilla clients are unaffected.
+
+    /** Writes a vanilla-valid copy of the stack, capped at 99. The live stack is untouched. */
+    @ModifyArg(
+        method = ["addAdditionalSaveData"],
+        at = [
+            At(
+                value = "INVOKE",
+                target = "Lnet/minecraft/world/level/storage/ValueOutput;store(Ljava/lang/String;Lcom/mojang/serialization/Codec;Ljava/lang/Object;)V",
+            ),
+        ],
+        index = 2,
+    )
+    private fun dropstackerCapSavedStack(value: Any?): Any? {
+        val stack = value as? ItemStack ?: return value
+        if (stack.count <= Item.ABSOLUTE_MAX_STACK_SIZE) return stack
+        return stack.copyWithCount(Item.ABSOLUTE_MAX_STACK_SIZE)
+    }
+
+    /** Records the true count alongside the capped stack. */
+    @Inject(method = ["addAdditionalSaveData"], at = [At("TAIL")])
+    private fun dropstackerOnSave(output: ValueOutput, ci: CallbackInfo) {
+        val count = this.getItem().count
+        if (count > Item.ABSOLUTE_MAX_STACK_SIZE) output.putInt(StackEngine.SAVED_COUNT_KEY, count)
+    }
+
+    /**
+     * Restores the true count. Only applied when the loaded stack is exactly at the cap, so an
+     * admin's `/data merge ... {Item:{count:50}}` wins over the leftover key instead of being undone.
+     * Deliberately not clamped to the current `maxStackSize`: lowering the config must not delete items.
+     */
+    @Inject(method = ["readAdditionalSaveData"], at = [At("TAIL")])
+    private fun dropstackerOnLoad(input: ValueInput, ci: CallbackInfo) {
+        val saved = input.getIntOr(StackEngine.SAVED_COUNT_KEY, 0)
+        val stack = this.getItem()
+        if (stack.isEmpty || stack.count != Item.ABSOLUTE_MAX_STACK_SIZE || saved <= stack.count) return
+        // New instance through setItem, so the change syncs and the label refreshes.
+        (this as Any as ItemEntity).item = stack.copyWithCount(saved)
     }
 }

@@ -32,6 +32,16 @@ fabricApi {
 	configureDataGeneration {
 		client = true
 	}
+
+	// Server gametests live in their own `gametest` source set and mod, so none of it ships in the
+	// release jar. Loom wires `runGameTest` into `check`, which means `./gradlew build` runs them.
+	configureTests {
+		createSourceSet = true
+		modId = "drop-stacker-gametest"
+		enableGameTests = true
+		enableClientGameTests = false
+		eula = true
+	}
 }
 
 dependencies {

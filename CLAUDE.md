@@ -47,9 +47,13 @@ This is a Fabric mod for Minecraft 26.3 written in Kotlin that automatically sta
 - Merging must produce a **new** `ItemStack` and go through `setItem`. `SynchedEntityData.set` compares by equality, so mutating the tracked stack's count in place never syncs to clients.
 - Rebuild the label only when `StackLabel.labelKey` changes; each rebuild is a component tree plus a packet to every tracking player.
 
+**Persistence invariant:** vanilla's disk codec for `ItemStack` only accepts counts 1–99, so `ItemEntityMixin` saves piles above 99 as a capped `Item` plus the true count under `DropStackerCount` (`StackEngine.SAVED_COUNT_KEY`), and restores it on load. Without those hooks, any pile over 99 is deleted on the next load. The network codec has no cap, so this stays server-side only. Don't remove or rename the key.
+
 **Source sets:** The project uses Fabric Loom's split environment feature. `src/main` is common/server-side; `src/client` is client-only and currently empty. Mixins are declared separately in `drop-stacker.mixins.json` (server) and `drop-stacker.client.mixins.json` (client).
 
-**Testing:** there are no automated tests (Fabric API 0.161.0+26.3 ships `fabric-gametest-api-v1`, but the project does not use it yet). To test manually, enable RCON in `run/server.properties` and drive `./gradlew runServer` with `/summon item ...` commands. Note that a dev server with **no player connected does not tick item entities reliably** — merge-on-spawn is testable headlessly, but the periodic tick scan needs `runClient` with a player in range.
+**Testing:** **run `./gradlew build` after every change** — Loom wires `runGameTest` into `check`, so it runs the Fabric server gametests headlessly and fails the build on any failing test. `./gradlew runGameTest` runs just the tests. Tests live in the separate `gametest` source set (`src/gametest/kotlin/.../gametest/DropStackerGameTests.kt`, its own `drop-stacker-gametest` mod), so none of it ships in the release jar. Add a gametest with every fix or feature; for a bug, write the test first and watch it fail. Note that in 26.3 entity type constants live in `EntityTypes`, not `EntityType`.
+
+For manual testing beyond the gametests, enable RCON in `run/server.properties` and drive `./gradlew runServer` with `/summon item ...` commands. Note that a dev server with **no player connected does not tick item entities reliably** — merge-on-spawn is testable headlessly, but the periodic tick scan needs `runClient` with a player in range.
 
 ## Minecraft version
 
